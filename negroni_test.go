@@ -59,6 +59,94 @@ func TestNegroniWith(t *testing.T) {
 	expect(t, result, "onetwothree")
 }
 
+func TestNegroniWithIssueCase(t *testing.T) {
+	result := ""
+	response := httptest.NewRecorder()
+
+	n1 := New()
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result = "one"
+		next(rw, r)
+	}))
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "two"
+		next(rw, r)
+	}))
+
+	// Using large number of middleware will cause append() to use the old slice as destination
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "three"
+		next(rw, r)
+	}))
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "four"
+		next(rw, r)
+	}))
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "five"
+		next(rw, r)
+	}))
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "six"
+		next(rw, r)
+	}))
+	n1.Use(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "seven"
+		next(rw, r)
+	}))
+
+	n1.ServeHTTP(response, (*http.Request)(nil))
+	expect(t, 7, len(n1.Handlers()))
+	expect(t, result, "onetwothreefourfivesixseven")
+
+	n2 := n1.With(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "eight"
+		next(rw, r)
+	}))
+
+	n3 := n1.With(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "nine"
+		next(rw, r)
+	}))
+
+	n4 := n1.With(HandlerFunc(func(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+		result += "ten"
+		next(rw, r)
+	}))
+
+
+	// Finally we also add one remaining UseHandlerFunc call for the router(/subrouters)
+	n2.UseHandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// Represents router/subrouter
+	})
+
+	n3.UseHandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// Represents router/subrouter
+	})
+
+	n4.UseHandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		// Represents router/subrouter
+	})
+
+
+	// Verify that n1 was left intact and not modified.
+	n1.ServeHTTP(response, (*http.Request)(nil))
+	expect(t, 7, len(n1.Handlers()))
+	expect(t, result, "onetwothreefourfivesixseven")
+
+	n2.ServeHTTP(response, (*http.Request)(nil))
+	expect(t, 9, len(n2.Handlers()))
+	expect(t, result, "onetwothreefourfivesixseveneight")
+
+	n3.ServeHTTP(response, (*http.Request)(nil))
+	expect(t, 9, len(n3.Handlers()))
+	expect(t, result, "onetwothreefourfivesixsevennine")
+
+	n4.ServeHTTP(response, (*http.Request)(nil))
+	expect(t, 9, len(n4.Handlers()))
+	expect(t, result, "onetwothreefourfivesixseventen")
+}
+
 func TestNegroniServeHTTP(t *testing.T) {
 	result := ""
 	response := httptest.NewRecorder()
