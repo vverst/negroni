@@ -1,6 +1,7 @@
 package negroni
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -252,4 +253,104 @@ func TestWrapFunc(t *testing.T) {
 	handler.ServeHTTP(response, (*http.Request)(nil), voidHTTPHandlerFunc)
 
 	expect(t, response.Code, http.StatusOK)
+}
+
+type MockMiddleware struct {
+	Counter int
+	Name	string
+}
+
+func (m *MockMiddleware) ServeHTTP(rw http.ResponseWriter, r *http.Request, next http.HandlerFunc) {
+	m.Counter++
+	next(rw, r)
+}
+
+func newMiddlewareStruct(name string) *MockMiddleware {
+	return &MockMiddleware{Name: name}
+}
+
+func sameHandlers(handlers []Handler, handlers2 []Handler) bool {
+	for i, v := range handlers {
+		sf1 := reflect.ValueOf(v)
+		sf2 := reflect.ValueOf(handlers2[i])
+
+		if sf1 != sf2 {
+			return false
+		}
+	}
+	return true
+}
+
+
+func TestHandlerVerification(t *testing.T) {
+	n := New()
+
+	mid1 := newMiddlewareStruct("mid1")
+	mid2 := newMiddlewareStruct("mid2")
+	mid3 := newMiddlewareStruct("mid3")
+	mid4 := newMiddlewareStruct("mid4")
+	mid5 := newMiddlewareStruct("mid5")
+	mid6 := newMiddlewareStruct("mid6")
+	mid7 := newMiddlewareStruct("mid7")
+
+	n.Use(mid1)
+	n.Use(mid2)
+	n.Use(mid3)
+	n.Use(mid4)
+	n.Use(mid5)
+	n.Use(mid6)
+	n.Use(mid7)
+
+	mid8 := newMiddlewareStruct("mid8")
+	subNeg1 := n.With(mid8)
+
+	mid9 := newMiddlewareStruct("mid9")
+	subNeg2 := n.With(mid9)
+
+	mid10 := newMiddlewareStruct("mid10")
+	subNeg3 := n.With(mid10)
+
+	fmt.Println(subNeg1)
+	fmt.Println(subNeg3)
+
+	if !sameHandlers(subNeg1.handlers, []Handler{mid1, mid2, mid3, mid4, mid5, mid6, mid7, mid8}) {
+		t.Error("Handlers not the same")
+	}
+	if !sameHandlers(subNeg2.handlers, []Handler{mid1, mid2, mid3, mid4, mid5, mid6, mid7, mid9}) {
+		t.Error("Handlers not the same")
+	}
+	if !sameHandlers(subNeg3.handlers, []Handler{mid1, mid2, mid3, mid4, mid5, mid6, mid7, mid10}) {
+		t.Error("Handlers not the same")
+	}
+
+	subNeg2.UseHandlerFunc(func (rw http.ResponseWriter, r *http.Request){
+		// final handler // router
+	})
+
+	response := httptest.NewRecorder()
+	subNeg2.ServeHTTP(response, (*http.Request)(nil))
+
+	testCounter(t, mid1, 1, "mid1")
+	testCounter(t, mid2, 1, "mid2")
+	testCounter(t, mid3, 1, "mid3")
+	testCounter(t, mid4, 1, "mid4")
+	testCounter(t, mid5, 1, "mid5")
+	testCounter(t, mid6, 1, "mid6")
+	testCounter(t, mid7, 1, "mid7")
+
+	// mid8 is part of midSubOne and should not be called
+	testCounter(t, mid8, 0, "mid8")
+	// mid9 is part of midSubTwo and should not be called
+	testCounter(t, mid9, 1, "mid9")
+	// mid10 is part of unused midSubThree and should not be called
+	testCounter(t, mid10, 0, "mid10")
+
+
+
+}
+
+func testCounter(t *testing.T, counter *MockMiddleware, expected int, identifier string) {
+	if counter.Counter != expected {
+		t.Errorf("Expected %d call to middleware instead %d (%s)", expected, counter.Counter, identifier)
+	}
 }
